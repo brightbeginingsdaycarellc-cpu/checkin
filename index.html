@@ -594,15 +594,21 @@
     // ---- Home: tap a child, then confirm (FR-04, FR-05) -------------------------------------
     function loadHome(warning) {
       state.warning = warning || '';
+      // The standalone page gets the children together with the scan (BOOT.home); use that once.
+      var pre = BOOT.home;
+      BOOT.home = null;
+      if (pre && state.session) return showHome(pre);
       show([A.loading('Loading your children…')]);
-      A.rpc('parent.home', { session: state.session, grant: BOOT.grant }).then(function (res) {
-        if (!res.ok) { if (!handleCommon(res)) messageScreen('Something went wrong', res.message, '', 'offline'); return; }
-        state.home = res;
-        state.selected = {};
-        if (res.codeUsed) return messageScreen('Already used', 'This code was already used on this phone. Scan the new code on the screen to check in or out again.', 'warn');
-        if (!res.children.length) return notListedScreen('No children are linked to you yet. Please ask the day care.');
-        renderHome();
-      });
+      A.rpc('parent.home', { session: state.session, grant: BOOT.grant }).then(showHome);
+    }
+
+    function showHome(res) {
+      if (!res.ok) { if (!handleCommon(res)) messageScreen('Something went wrong', res.message, '', 'offline'); return; }
+      state.home = res;
+      state.selected = {};
+      if (res.codeUsed) return messageScreen('Already used', 'This code was already used on this phone. Scan the new code on the screen to check in or out again.', 'warn');
+      if (!res.children.length) return notListedScreen('No children are linked to you yet. Please ask the day care.');
+      renderHome();
     }
 
     function actionLabel(type) { return type === 'in' ? 'Check in' : 'Check out'; }
@@ -725,8 +731,12 @@
     var saved = null;
     try { saved = JSON.parse(window.sessionStorage.getItem(SCAN_KEY) || 'null'); } catch (e) { saved = null; }
 
+    // A signed-in phone sends its session with the scan and gets its children in the same reply.
+    // The key is the one Parent.html uses (SESSION_KEY there).
+    var session = t ? (A.store.get('dc.adult.session') || '') : '';
+
     function start() {
-    A.rpc('parent.scan', { t: t }).then(function (res) {
+    A.rpc('parent.scan', { t: t, session: session }).then(function (res) {
       if (!res.ok) {
         var root = A.$('app');
         A.clear(root);
@@ -741,7 +751,7 @@
         } }));
         return;
       }
-      var boot = { daycareName: res.daycareName, grant: res.grant, scan: res.scan };
+      var boot = { daycareName: res.daycareName, grant: res.grant, scan: res.scan, home: res.home || null };
       if (boot.scan === 'ok') {
         try { window.sessionStorage.setItem(SCAN_KEY, JSON.stringify({ grant: boot.grant, at: Date.now() })); } catch (e) { /* ignore */ }
       } else if (!t && saved && saved.grant && Date.now() - saved.at < 5 * 60 * 1000) {
